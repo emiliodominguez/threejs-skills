@@ -18,7 +18,9 @@ with network access; its before/after report needs `threejs-model-inspect` insta
 
 1. Run `threejs-model-inspect` on the source and note where the bytes are (geometry, textures, animation) and which
    names, materials and clips the app references (search the code for `getObjectByName`, `nodes.`, `materials.`,
-   clip names).
+   clip names). Check for an existing pipeline first (package.json scripts running `gltfpack` or `gltf-transform`,
+   a generator of `gltfpack` in the report): files it already compressed rarely shrink further. Improve that
+   pipeline's flags instead of replacing it, and keep the original whenever the script reports no meaningful gain.
 2. Choose a preset:
 
    | Preset | Use for | Trades |

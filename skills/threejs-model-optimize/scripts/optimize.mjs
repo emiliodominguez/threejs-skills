@@ -166,6 +166,12 @@ async function main(argv) {
 
 	const inspect = await loadInspector();
 	const before = inspect ? await inspect(input) : null;
+	const compressed = before?.extensionsUsed.filter((name) => /meshopt_compression|draco_mesh_compression|texture_basisu/.test(name)) ?? [];
+	if (compressed.length > 0) {
+		console.log(
+			`Note: the input is already compressed (${compressed.join(", ")}${before.generator ? `, by ${before.generator}` : ""}). Re-optimizing decodes and re-encodes it; expect little or no gain, and keep the existing pipeline if the result is not smaller.`,
+		);
+	}
 	// npx is a .cmd launcher on Windows, which spawnSync can only start through a shell.
 	const run = spawnSync("npx", command, { stdio: ["ignore", "inherit", "inherit"], shell: process.platform === "win32" });
 	if (run.status !== 0) {
@@ -195,6 +201,12 @@ async function main(argv) {
 	];
 	console.log(`\n${"".padEnd(20)}${"before".padEnd(14)}${"after".padEnd(14)}`);
 	for (const [label, from, to, change] of rows) console.log(`${label.padEnd(20)}${from.padEnd(14)}${to.padEnd(14)}${change}`);
+	const smaller = after.bytes.total < before.bytes.total * 0.98 || after.gpuTextureBytes < before.gpuTextureBytes * 0.98 || after.scene.drawCalls < before.scene.drawCalls;
+	if (!smaller) {
+		console.log(
+			`\nNo meaningful gain: the output is not smaller in download, GPU memory or draw calls. Keep the original${compressed.length ? " and its existing pipeline" : ""}; delete ${output}.`,
+		);
+	}
 
 	const namesBefore = addressableNames(before);
 	const namesAfter = addressableNames(after);
