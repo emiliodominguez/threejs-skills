@@ -49,7 +49,11 @@ paths in commands, and keep the working directory in the user's project. Bundled
    It drives a headless Chrome or Chromium (set `CHROME_PATH` if it is not found) over the bundled reference viewer,
    writes the PNG next to the model, and prints triangles, draw calls, bounds, clips and console errors. Open the
    PNG and describe what you see; do not report a model as fine without looking at it.
-6. Answer what was asked from the report (size budget, parts list, clip list) and quote numbers, not impressions.
+6. Asset kits (many props in one file, each modeled at the origin and picked by name in code) are detected
+   automatically: the report adds an `## Assets` table per root asset (size, triangles, draw calls, whether it rests
+   on y=0) and skips whole-file bounds findings, and `render.mjs` draws one labeled tile per asset. Render a single
+   asset with `--node <name>`, or the stacked file with `--whole`.
+7. Answer what was asked from the report (size budget, parts list, clip list) and quote numbers, not impressions.
 
 ## Reading the numbers
 

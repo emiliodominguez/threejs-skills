@@ -31,3 +31,12 @@ test("configurator fixture reports three.js names and shared materials", async (
 	for (const name of ["Body_Paint", "Fender001", "Handlebar", "Wheel"]) assert.ok(names.includes(name), name);
 	assert.equal(report.materials.find((material) => material.name === "Paint").usedBy, 2);
 });
+
+test("kit fixture reports per-asset stats and suppresses whole-file grounding", async () => {
+	const report = await inspect(paths.kit);
+	assert.deepEqual(report.kit.assets.map((asset) => asset.name).sort(), ["barrel", "bench", "crate", "lamp", "sign"]);
+	assert.equal(report.kit.assets.find((asset) => asset.name === "sign").grounded, false);
+	const codes = report.warnings.map((warning) => warning.code);
+	assert.ok(!codes.includes("not-grounded"));
+	assert.equal((await inspect(paths.configurator)).kit, null, "a single assembled product is not a kit");
+});

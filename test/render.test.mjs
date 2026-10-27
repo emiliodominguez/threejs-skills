@@ -96,3 +96,21 @@ test("fails clearly on a missing clip", { skip: !browser && "no Chrome-family br
 	assert.equal(run.status, 1);
 	assert.match(run.stderr, /Clip "Run" not found/);
 });
+
+test("renders a kit as one tile per asset and a single asset with --node", { skip: !browser && "no Chrome-family browser found" }, async () => {
+	const { buildFixtures } = await import("../evals/fixtures.mjs");
+	const fixtures = await buildFixtures(join(dir, "fixtures"));
+	const grid = spawnSync(process.execPath, [SCRIPT, fixtures.kit, "--size", "100", "--out", join(dir, "kit.png")], {
+		encoding: "utf8",
+		timeout: 90000,
+	});
+	assert.equal(grid.status, 0, grid.stderr);
+	assert.match(grid.stdout, /Kit: 5 assets/);
+	const single = spawnSync(process.execPath, [SCRIPT, fixtures.kit, "--node", "lamp", "--size", "100", "--out", join(dir, "lamp.png")], {
+		encoding: "utf8",
+		timeout: 90000,
+	});
+	assert.equal(single.status, 0, single.stderr);
+	assert.doesNotMatch(single.stdout, /Kit:/);
+	assert.equal(readFileSync(join(dir, "lamp.png")).readUInt32BE(16), 300); // a normal 3x2 sheet of 100 px views
+});

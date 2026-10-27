@@ -353,6 +353,29 @@ export const FIXTURES = {
 			};
 		},
 	},
+	kit: {
+		broken: "Not broken: an asset kit (five props each modeled at the origin, picked by name), where whole-file bounds and grounding mislead.",
+		expect: ["kit", "kit-not-grounded"],
+		build() {
+			const { doc, scene } = start();
+			const material = doc.createMaterial("Wood").setBaseColorFactor([0.6, 0.45, 0.3, 1]).setMetallicFactor(0);
+			const props = { crate: [0.5, 0.5, 0.5], barrel: [0.4, 0.6, 0.4], lamp: [0.15, 1.6, 0.15], bench: [1.2, 0.45, 0.4] };
+			for (const [name, size] of Object.entries(props)) {
+				scene.addChild(
+					doc
+						.createNode(name)
+						.setMesh(doc.createMesh(name).addPrimitive(box(doc, size, { offset: [0, size[1] / 2, 0] }).setMaterial(material))),
+				);
+			}
+			// A hanging sign sits above the ground on purpose; the kit report should list it.
+			scene.addChild(
+				doc
+					.createNode("sign")
+					.setMesh(doc.createMesh("sign").addPrimitive(box(doc, [0.6, 0.3, 0.05], { offset: [0, 2, 0] }).setMaterial(material))),
+			);
+			return doc;
+		},
+	},
 	variants: {
 		broken: "Not broken: a shoe with KHR_materials_variants (Classic, Red, Midnight), which GLTFLoader keeps but does not apply.",
 		expect: ["ignored-extensions"],

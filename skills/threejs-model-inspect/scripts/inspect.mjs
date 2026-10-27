@@ -298,6 +298,41 @@ function accessorBounds(accessor) {
 }
 
 /**
+ * Detects an asset kit: several root assets each modeled at the origin and picked by name at runtime, rather than a
+ * scene laid out in space. Whole-file bounds and grounding mean nothing for a kit. Test: at least four root assets,
+ * and three quarters of them centered (horizontally) within half their own footprint of the origin.
+ * @param {{ name: string, bounds: { min: number[], max: number[] }, triangles: number, drawCalls: number, materials: Set<number> }[]} assets
+ * @param {{ min: number[], max: number[] }} overall
+ * @returns {{ assets: object[] } | null}
+ */
+function detectKit(assets, overall) {
+	const meshed = assets.filter((asset) => asset.triangles > 0 && Number.isFinite(asset.bounds.min[0]));
+	if (meshed.length < 4 || !Number.isFinite(overall.min[0])) return null;
+	const atOrigin = meshed.filter((asset) => {
+		const { min, max } = asset.bounds;
+		const footprint = Math.max(max[0] - min[0], max[2] - min[2], 1e-3);
+		return Math.hypot((min[0] + max[0]) / 2, (min[2] + max[2]) / 2) <= footprint / 2;
+	});
+	if (atOrigin.length < meshed.length * 0.75) return null;
+	return {
+		assets: meshed.map((asset) => {
+			const size = asset.bounds.max.map((value, axis) => round(value - asset.bounds.min[axis]));
+			const height = size[1];
+			return {
+				name: asset.name,
+				size,
+				center: asset.bounds.max.map((value, axis) => round((value + asset.bounds.min[axis]) / 2)),
+				minY: round(asset.bounds.min[1]),
+				grounded: Math.abs(asset.bounds.min[1]) <= Math.max(height * 0.05, 0.02),
+				triangles: Math.round(asset.triangles),
+				drawCalls: asset.drawCalls,
+				materials: asset.materials.size,
+			};
+		}),
+	};
+}
+
+/**
  * Converts the PropertyBinding rules three.js applies to glTF names.
  * @param {string} name
  * @returns {string}
@@ -518,8 +553,9 @@ export async function inspect(path) {
 	 * @param {number} nodeIndex
 	 * @param {number[]} parentMatrix
 	 * @param {number} depth
+	 * @param {{ bounds: { min: number[], max: number[] }, triangles: number, drawCalls: number, materials: Set<number> }} asset  stats of the root asset this node belongs to
 	 */
-	function walk(nodeIndex, parentMatrix, depth) {
+	function walk(nodeIndex, parentMatrix, depth, asset) {
 		if (visited.has(nodeIndex)) return;
 		visited.add(nodeIndex);
 		const node = nodes[nodeIndex];
@@ -537,6 +573,8 @@ export async function inspect(path) {
 				meshTriangles += counts.triangles;
 				vertices += counts.vertices * instances;
 				drawCalls++;
+				asset.drawCalls++;
+				asset.materials.add(primitive.material ?? -1);
 				if ((primitive.mode ?? 4) === 4 && !primitive.attributes?.NORMAL) primitivesWithoutNormals.push(mesh.name ?? `mesh_${node.mesh}`);
 				const material = materials[primitive.material];
 				if (material && materialTextures(material).length > 0 && !primitive.attributes?.TEXCOORD_0) texturedWithoutUv.push(mesh.name ?? `mesh_${node.mesh}`);
@@ -548,10 +586,13 @@ export async function inspect(path) {
 						const value = world[axis] * local[0] + world[4 + axis] * local[1] + world[8 + axis] * local[2] + world[12 + axis];
 						bounds.min[axis] = Math.min(bounds.min[axis], value);
 						bounds.max[axis] = Math.max(bounds.max[axis], value);
+						asset.bounds.min[axis] = Math.min(asset.bounds.min[axis], value);
+						asset.bounds.max[axis] = Math.max(asset.bounds.max[axis], value);
 					}
 				}
 			}
 			triangles += meshTriangles * instances;
+			asset.triangles += meshTriangles * instances;
 			const primitiveCount = mesh.primitives?.length ?? 0;
 			const shape = primitiveCount > 1 ? `Group of ${primitiveCount} meshes` : "Mesh";
 			entry.tags.push(`${node.skin !== undefined ? "Skinned" : ""}${shape} "${mesh.name ?? ""}" ${formatCount(meshTriangles)} tris`);
@@ -569,10 +610,15 @@ export async function inspect(path) {
 		if (node.name && (nameCounts.get(threeName(node.name)) ?? 0) > 1) entry.tags.push("duplicate name");
 		tree.push(entry);
 
-		for (const child of node.children ?? []) walk(child, world, depth + 1);
+		for (const child of node.children ?? []) walk(child, world, depth + 1, asset);
 	}
 	const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-	for (const root of roots) walk(root, identity, 0);
+	const assets = roots.map((root) => {
+		const asset = { name: threeName(nodes[root]?.name ?? "") || `(unnamed #${root})`, bounds: { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] }, triangles: 0, drawCalls: 0, materials: new Set() };
+		walk(root, identity, 0, asset);
+		return asset;
+	});
+	const kit = detectKit(assets, bounds);
 
 	const hasBounds = Number.isFinite(bounds.min[0]);
 	const size = hasBounds ? bounds.max.map((value, axis) => value - bounds.min[axis]) : [0, 0, 0];
@@ -639,6 +685,7 @@ export async function inspect(path) {
 		},
 		bounds: hasBounds ? { min: bounds.min.map((value) => round(value)), max: bounds.max.map((value) => round(value)), size: size.map((value) => round(value)), center: center.map((value) => round(value)) } : null,
 		tree,
+		kit,
 		materials: materialReports,
 		images: imageReports,
 		gpuTextureBytes,
@@ -680,7 +727,16 @@ function diagnose(report, facts) {
 	if (otherUnsupported.length > 0) add("info", "ignored-extensions", `GLTFLoader ignores ${otherUnsupported.join(", ")}; the model still loads without those features.`);
 	for (const decoder of report.decoders) add("info", "decoder", `Needs ${decoder.name}: ${decoder.wiring}. Without it, loading throws.`);
 
-	if (report.bounds) {
+	if (report.kit) {
+		const assets = report.kit.assets;
+		add("info", "kit", `Asset kit: ${assets.length} root assets modeled at the origin, meant to be picked by name. Whole-file bounds do not describe any single asset; see ## Assets.`);
+		const floating = assets.filter((asset) => !asset.grounded);
+		if (floating.length > 0) add("info", "kit-not-grounded", `${floating.length} asset(s) do not rest on y=0 (${floating.slice(0, 5).map((asset) => `${asset.name} y=${asset.minY}`).join(", ")}${floating.length > 5 ? ", ..." : ""}): intentional for hanging or buried parts, otherwise they float or sink when placed.`);
+		const sorted = [...assets].sort((a, b) => b.triangles - a.triangles);
+		const median = sorted[Math.floor(sorted.length / 2)].triangles;
+		const heavy = sorted.filter((asset) => asset.triangles > Math.max(median * 4, 5000));
+		if (heavy.length > 0) add("info", "kit-heavy-assets", `Heaviest assets (over 4x the kit median of ${formatCount(median)} triangles): ${heavy.slice(0, 5).map((asset) => `${asset.name} ${formatCount(asset.triangles)}`).join(", ")}. Candidates for simplification or LODs if placed often.`);
+	} else if (report.bounds) {
 		const largest = Math.max(...report.bounds.size);
 		if (largest > 100) add("warn", "scale-large", `Largest dimension is ${round(largest, 1)} units. If the scene is in meters this was likely exported in centimeters: scale by 0.01, or frame the camera to the bounds.`);
 		else if (largest > 0 && largest < 0.1) add("warn", "scale-small", `Largest dimension is ${round(largest, 4)} units: the model may be invisible at a default camera distance. Scale it up or frame the camera to the bounds.`);
@@ -765,6 +821,15 @@ export function formatReport(report, options) {
 		push(`${"  ".repeat(entry.depth)}- ${label}${entry.tags.length ? `  [${entry.tags.join("; ")}]` : ""}`);
 	}
 	if (report.tree.length > options.maxNodes) push(`  ... ${report.tree.length - options.maxNodes} more nodes (--max-nodes to show)`);
+
+	if (report.kit) {
+		push();
+		push(`## Assets (kit of ${report.kit.assets.length}, heaviest first)`);
+		push("name | size (x, y, z) | triangles | draw calls | materials | rests on y=0");
+		for (const asset of [...report.kit.assets].sort((a, b) => b.triangles - a.triangles)) {
+			push(`${asset.name} | ${asset.size.join(" x ")} | ${formatCount(asset.triangles)} | ${asset.drawCalls} | ${asset.materials} | ${asset.grounded ? "yes" : `no (y=${asset.minY})`}`);
+		}
+	}
 
 	if (report.materials.length > 0) {
 		push();

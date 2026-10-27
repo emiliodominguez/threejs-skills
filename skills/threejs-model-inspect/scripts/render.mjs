@@ -286,14 +286,14 @@ export async function capturePage(page, url, options = {}) {
 async function main(argv) {
 	const args = argv.slice(2);
 	if (args.length === 0 || args.includes("-h") || args.includes("--help")) {
-		console.log("Usage: node render.mjs <model> [--compare other] [--out file.png] [--size 384] [--clip name --time s] [--no-env] [--max-diff percent]");
+		console.log("Usage: node render.mjs <model> [--compare other] [--out file.png] [--size 384] [--clip name --time s] [--no-env] [--max-diff percent] [--node name] [--whole]");
 		return args.length === 0 ? 1 : 0;
 	}
 	const valueOf = (flag) => {
 		const index = args.indexOf(flag);
 		return index >= 0 ? args[index + 1] : undefined;
 	};
-	const takesValue = new Set(["--compare", "--out", "--size", "--clip", "--time", "--max-diff"]);
+	const takesValue = new Set(["--compare", "--out", "--size", "--clip", "--time", "--max-diff", "--node"]);
 	const model = args.find((arg, index) => !arg.startsWith("--") && !takesValue.has(args[index - 1]));
 	if (!model || !existsSync(model)) {
 		console.error(`Model not found: ${model ?? "(none given)"}`);
@@ -314,11 +314,14 @@ async function main(argv) {
 	const mounts = { "/a/": dirname(resolve(model)) };
 	if (compare) mounts["/b/"] = dirname(resolve(compare));
 	const server = await startServer({ mounts, three });
-	const query = new URLSearchParams({ capture: compare ? "compare" : "sheet", model: `/a/${basename(model)}`, size: valueOf("--size") ?? "384" });
+	const query = new URLSearchParams({ capture: compare ? "compare" : "sheet", model: `/a/${basename(model)}` });
+	if (valueOf("--size")) query.set("size", valueOf("--size")); // the viewer defaults to 384 px views, 220 px kit tiles
 	if (compare) query.set("compare", `/b/${basename(compare)}`);
 	if (valueOf("--clip")) query.set("clip", valueOf("--clip"));
 	if (valueOf("--time")) query.set("time", valueOf("--time"));
 	if (args.includes("--no-env")) query.set("env", "0");
+	if (valueOf("--node")) query.set("node", valueOf("--node"));
+	if (args.includes("--whole")) query.set("whole", "1");
 
 	const page = await launch(executable);
 	let capture;
@@ -344,6 +347,7 @@ async function main(argv) {
 	const describe = (label, facts) =>
 		console.log(`${label}: ${facts.triangles} triangles, ${facts.drawCalls} draw calls, size [${facts.size.join(", ")}], center [${facts.center.join(", ")}]${facts.clips.length ? `, clips ${facts.clips.join(", ")}` : ""}`);
 	describe(compare ? "A" : "model", result.model);
+	if (result.kit) console.log(`Kit: ${result.kit.length} assets rendered one per tile (--node <name> for one asset, --whole for the stacked file)`);
 	if (compare) {
 		describe("B", result.compare);
 		console.log(`Pixel diff: ${result.diff.percent}% of covered pixels (per view: ${result.diff.perView.join("%, ")}%)`);

@@ -344,6 +344,60 @@
 			}
 
 			/**
+			 * Returns the root assets of a kit (four or more, three quarters centered at the origin), or null.
+			 * @param {THREE.Object3D} root
+			 * @returns {{ object: THREE.Object3D, box: THREE.Box3 }[] | null}
+			 */
+			function kitAssets(root) {
+				const assets = root.children
+					.map((object) => ({ object, box: new THREE.Box3().setFromObject(object) }))
+					.filter((asset) => !asset.box.isEmpty());
+				if (assets.length < 4) return null;
+				const atOrigin = assets.filter(({ box }) => {
+					const footprint = Math.max(box.max.x - box.min.x, box.max.z - box.min.z, 1e-3);
+					return Math.hypot((box.min.x + box.max.x) / 2, (box.min.z + box.max.z) / 2) <= footprint / 2;
+				});
+				return atOrigin.length >= assets.length * 0.75 ? assets : null;
+			}
+
+			/**
+			 * Renders every kit asset alone in its own labeled tile, framed to its own bounds.
+			 * @param {THREE.Object3D} root
+			 * @param {{ object: THREE.Object3D, box: THREE.Box3 }[]} assets
+			 * @param {HTMLCanvasElement} canvas
+			 * @param {CanvasRenderingContext2D} context
+			 * @param {number} tile
+			 * @param {any} result
+			 */
+			function renderKit(root, assets, canvas, context, tile, result) {
+				const columns = Math.ceil(Math.sqrt(assets.length * 1.6));
+				canvas.width = columns * tile;
+				canvas.height = Math.ceil(assets.length / columns) * tile;
+				context.fillStyle = `rgb(${BACKGROUND.join(",")})`;
+				context.fillRect(0, 0, canvas.width, canvas.height);
+				renderer.setSize(tile, tile);
+				scene.add(root);
+				result.kit = [];
+				assets.forEach(({ object, box }, index) => {
+					for (const other of assets) other.object.visible = other.object === object;
+					placeCamera(box, VIEWS["three-quarter"].direction);
+					renderer.render(scene, camera);
+					const x = (index % columns) * tile;
+					const y = Math.floor(index / columns) * tile;
+					context.drawImage(renderer.domElement, x, y, tile, tile);
+					const triangles = renderer.info.render.triangles;
+					context.fillStyle = "rgba(0, 0, 0, 0.55)";
+					context.fillRect(x, y, tile, 20);
+					context.fillStyle = "#fff";
+					context.font = "12px ui-monospace, Menlo, monospace";
+					context.fillText(`${object.name || `#${index}`}  ${triangles.toLocaleString("en-US")}`, x + 6, y + 14);
+					result.kit.push({ name: object.name, triangles });
+				});
+				for (const { object } of assets) object.visible = true;
+				scene.remove(root);
+			}
+
+			/**
 			 * Runs capture mode and publishes window.__result.
 			 */
 			async function capture() {
@@ -372,16 +426,31 @@
 					renderRow(second.scene, box, names, context, 1, size, "B ");
 					result.diff = diffRows(context, names.length, size);
 				} else {
-					const names = ["front", "right", "back", "top", "three-quarter", "wireframe"];
-					canvas.width = 3 * size;
-					canvas.height = 2 * size;
-					// renderRow draws a single row; render each view to its own tile and lay them out 3x2.
-					names.forEach((name, index) => {
-						const tile = document.createElement("canvas");
-						tile.width = tile.height = size;
-						renderRow(first.scene, box, [name], tile.getContext("2d"), 0, size, "");
-						context.drawImage(tile, (index % 3) * size, Math.floor(index / 3) * size);
-					});
+					// --node: render one named object alone. Kits (assets stacked at the origin): one tile per asset.
+					let subject = first.scene;
+					if (params.get("node")) {
+						const found = first.scene.getObjectByName(params.get("node"));
+						if (!found) throw new Error(`Node "${params.get("node")}" not found. Root names: ${first.scene.children.map((child) => child.name).join(", ")}`);
+						subject = new THREE.Group();
+						subject.attach(found); // keeps its world transform
+						result.node = params.get("node");
+					}
+					const kit = params.get("node") || params.get("whole") === "1" ? null : kitAssets(first.scene);
+					if (kit) {
+						renderKit(first.scene, kit, canvas, context, Number(params.get("size") ?? 220), result);
+					} else {
+						const subjectBox = new THREE.Box3().setFromObject(subject);
+						const names = ["front", "right", "back", "top", "three-quarter", "wireframe"];
+						canvas.width = 3 * size;
+						canvas.height = 2 * size;
+						// renderRow draws a single row; render each view to its own tile and lay them out 3x2.
+						names.forEach((name, index) => {
+							const tile = document.createElement("canvas");
+							tile.width = tile.height = size;
+							renderRow(subject, subjectBox, [name], tile.getContext("2d"), 0, size, "");
+							context.drawImage(tile, (index % 3) * size, Math.floor(index / 3) * size);
+						});
+					}
 				}
 				result.width = canvas.width;
 				result.height = canvas.height;
