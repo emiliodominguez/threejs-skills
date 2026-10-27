@@ -118,3 +118,16 @@ test("CLI exits 1 on removed APIs, applies --fix and skips node_modules", () => 
 	assert.equal(fixed.status, 0);
 	assert.match(readFileSync(join(dir, "src", "app.js"), "utf8"), /outputColorSpace = THREE\.SRGBColorSpace/);
 });
+
+test("GTAOPass keeps distanceFallOff; only the WebGPU GTAONode changed", () => {
+	const webgl = 'import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";\nao.updateGtaoMaterial({ distanceFallOff: 1 });';
+	assert.ok(!ids(webgl).includes("gtao-distance"));
+	const webgpu = 'import { ao } from "three/addons/tsl/display/GTAONode.js";\nimport { pass } from "three/tsl";\naoPass.distanceFallOff.value = 1;';
+	assert.ok(ids(webgpu).includes("gtao-distance"));
+});
+
+test("envMapIntensity is flagged on JS materials but not as a GLSL uniform", () => {
+	assert.ok(ids("const water = new THREE.MeshPhysicalMaterial({ envMapIntensity: 1.2 });").includes("env-map-intensity"));
+	assert.ok(ids("material.envMapIntensity = 2;").includes("env-map-intensity"));
+	assert.ok(!ids("vec3 sky = getIBLRadiance(v, n, .05) / max(envMapIntensity, 1e-3); // three").includes("env-map-intensity"));
+});

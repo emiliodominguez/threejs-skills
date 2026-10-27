@@ -1,6 +1,6 @@
 ---
 name: threejs-upgrade
-description: "Linter and migration guide for outdated three.js and R3F code: removed or renamed APIs, old imports, color and lighting changes. Use when upgrading three or R3F, on not-exported errors, or reviewing generated 3D code. Hands off to `threejs-model-fix`."
+description: "Audit of three.js and R3F code for deprecated, removed or renamed APIs, with a linter and migration guide. Use when auditing against the installed three version, preparing for the next release, upgrading, on not-exported errors, or reviewing 3D code. Hands off to `threejs-model-fix`."
 ---
 
 # Upgrade outdated three.js code

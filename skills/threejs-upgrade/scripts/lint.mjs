@@ -64,7 +64,15 @@ export const RULES = [
 	{ id: "physically-correct-lights", pattern: /\bphysicallyCorrectLights\b/, level: "removed", since: 150, message: "physicallyCorrectLights was removed; physical light units are always on. Re-tune intensities (multiply old values by about PI)." },
 	{ id: "legacy-lights", pattern: /\buseLegacyLights\b/, level: "removed", since: 155, message: "useLegacyLights was deprecated in r155 and no longer exists; physical light units are always on. Delete the line and re-tune intensities." },
 	{ id: "pcf-soft", pattern: /\bPCFSoftShadowMap\b/, level: "deprecated", since: 182, message: "PCFSoftShadowMap falls back to PCFShadowMap (now soft) with a warning.", replace: "PCFShadowMap" },
-	{ id: "env-map-intensity", pattern: /\benvMapIntensity\b/, level: "outdated", since: 163, message: "envMapIntensity only attenuates material.envMap now; scale scene.environment with scene.environmentIntensity." },
+	// JS assignments only (`.envMapIntensity =`, `envMapIntensity:`); the GLSL uniform of the same name is fine.
+	{
+		id: "env-map-intensity",
+		pattern: /\.envMapIntensity\s*=(?!=)|\benvMapIntensity\s*:/,
+		level: "outdated",
+		since: 163,
+		message:
+			"material.envMapIntensity has no effect unless the material has its own envMap: with scene.environment, WebGLRenderer uses scene.environmentIntensity instead. Assign material.envMap or scale scene.environmentIntensity.",
+	},
 
 	// Loaders
 	{ id: "rgbe-loader", pattern: /\bRGBELoader\b/, level: "deprecated", since: 180, message: "RGBELoader is HDRLoader (three/addons/loaders/HDRLoader.js).", replace: "HDRLoader" },
@@ -129,8 +137,24 @@ export const RULES = [
 	{ id: "tsl-storage-object", pattern: /\bstorageObject\s*\(/, level: "removed", since: 171, message: "storageObject() is storage().setPBO(true).", requires: TSL },
 	{ id: "tsl-texture-uv", pattern: /\.uv\s*\(/, level: "removed", since: 172, message: "TextureNode.uv() is sample().", requires: TSL },
 	{ id: "tsl-direction-color", pattern: /\b(directionToColor|colorToDirection)\s*\(/, level: "deprecated", since: 185, message: "directionToColor/colorToDirection are packNormalToRGB/unpackRGBToNormal.", requires: TSL },
-	{ id: "glsl-inverse-transform-direction", pattern: /\binverseTransformDirection\s*\(/, level: "deprecated", since: 185, message: "Use transformNormalByInverseViewMatrix() or transformDirectionByInverseViewMatrix()." },
-	{ id: "gtao-distance", pattern: /\b(distanceExponent|distanceFallOff)\b/, level: "deprecated", since: 186, message: "GTAONode distanceExponent/distanceFallOff have no effect since r186.", requires: /GTAO|\bao\s*\(/ },
+	{
+		id: "glsl-inverse-transform-direction",
+		pattern: /\binverseTransformDirection\s*\(/,
+		level: "deprecated",
+		since: 185,
+		message:
+			"GLSL inverseTransformDirection() is a deprecated alias: use transformNormalByInverseViewMatrix() for normals, transformDirectionByInverseViewMatrix() for directions. Both compute the same math, so either preserves behavior.",
+	},
+	// Only the WebGPU GTAONode changed; the WebGL GTAOPass shader still uses both uniforms.
+	{
+		id: "gtao-distance",
+		pattern: /\b(distanceExponent|distanceFallOff)\b/,
+		level: "deprecated",
+		since: 186,
+		message: "GTAONode distanceExponent/distanceFallOff have no effect since r186.",
+		requires: /GTAONode|from\s+["']three\/(tsl|webgpu)["']/,
+		unless: /GTAOPass/,
+	},
 	{ id: "webgpu-pcf-soft", pattern: /\bPCFSoftShadowMap\b/, level: "removed", since: 186, message: "PCFSoftShadowMap was removed from WebGPURenderer; use PCFShadowMap.", requires: /three\/webgpu/ },
 
 	// Announced for r187 (in development)
