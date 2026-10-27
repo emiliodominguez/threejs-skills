@@ -37,10 +37,10 @@ async function harness() {
 async function main(argv) {
 	const args = argv.slice(2);
 	const value = (flag) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
-	const takesValue = new Set(["--wait", "--sample", "--screenshot", "--click", "--width", "--height"]);
+	const takesValue = new Set(["--wait", "--sample", "--screenshot", "--click", "--width", "--height", "--watch"]);
 	const target = args.find((arg, index) => !arg.startsWith("--") && !takesValue.has(args[index - 1]));
 	if (!target || args.includes("--help")) {
-		console.log("Usage: node doctor.mjs <url|file.html> [--wait ms] [--sample ms] [--click selector] [--screenshot out.png] [--json]");
+		console.log("Usage: node doctor.mjs <url|file.html> [--wait ms] [--sample ms] [--watch seconds] [--click selector] [--screenshot out.png] [--json]");
 		return target ? 0 : 1;
 	}
 
@@ -90,6 +90,27 @@ async function main(argv) {
 			returnByValue: true,
 		});
 		result = JSON.parse(evaluation.result.value ?? "{}");
+
+		// --watch N: GPU memory growth over N idle seconds is the real leak signal.
+		if (value("--watch")) {
+			const memory = "JSON.stringify({ ...[...window.threejsDoctor.captured.renderers].at(-1)?.info?.memory })";
+			const before = JSON.parse((await page.send("Runtime.evaluate", { expression: memory, returnByValue: true })).result.value);
+			await new Promise((done) => setTimeout(done, Number(value("--watch")) * 1000));
+			const after = JSON.parse((await page.send("Runtime.evaluate", { expression: memory, returnByValue: true })).result.value);
+			const growth = { geometries: after.geometries - before.geometries, textures: after.textures - before.textures };
+			result.watch = { seconds: Number(value("--watch")), before, after, growth };
+			if (growth.geometries === 0 && growth.textures === 0) {
+				// Stable memory explains a snapshot surplus as render targets, shadow maps and caches, not a leak.
+				result.findings = result.findings.filter((finding) => !finding.code.endsWith("-surplus"));
+				result.findings.push({ level: "info", code: "memory-stable", message: `GPU memory stayed at ${after.geometries} geometries and ${after.textures} textures for ${value("--watch")} idle seconds: no leak while idle.` });
+			} else {
+				result.findings.unshift({
+					level: "warn",
+					code: "memory-growth",
+					message: `GPU memory grew by ${growth.geometries} geometries and ${growth.textures} textures in ${value("--watch")} idle seconds: something is created every frame or interval and never disposed.`,
+				});
+			}
+		}
 		if (value("--screenshot")) {
 			const { data } = await page.send("Page.captureScreenshot", { format: "png" });
 			writeFileSync(value("--screenshot"), Buffer.from(data, "base64"));
@@ -114,6 +135,7 @@ async function main(argv) {
 			);
 		}
 		if (frames) console.log(`Frames: ${frames.frames} sampled, average ${frames.averageMs} ms, p95 ${frames.p95Ms} ms, ${frames.longFrames} over 50 ms (headless: indicative only)`);
+		if (result.watch) console.log(`Watch: ${result.watch.seconds}s idle, geometries ${result.watch.before.geometries} -> ${result.watch.after.geometries}, textures ${result.watch.before.textures} -> ${result.watch.after.textures}`);
 		for (const finding of findings ?? []) console.log(`[${finding.level}] ${finding.code}: ${finding.message}`);
 		for (const error of result.consoleErrors) console.log(`console error: ${error}`);
 		if ((findings ?? []).length === 0) console.log("No findings.");

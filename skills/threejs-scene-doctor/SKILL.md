@@ -21,7 +21,13 @@ needs Node 22+, a Chrome-family browser, and `threejs-model-inspect` installed n
    node "<this-skill-dir>/scripts/doctor.mjs" dist/index.html --wait 8000          # served from its folder
    node "<this-skill-dir>/scripts/doctor.mjs" http://localhost:5173 --click "#start" --screenshot shot.png
    node "<this-skill-dir>/scripts/doctor.mjs" http://localhost:5173 --json
+   node "<this-skill-dir>/scripts/doctor.mjs" http://localhost:5173 --watch 10                 # leak check
    ```
+
+   It finds the app's main scene even behind post-processing (the largest scene rendered recently, not the
+   composer's full-screen quad). A single snapshot cannot prove a leak, because render targets, shadow maps and
+   thumbnail scenes hold GPU resources too, so surplus counts are only `info`. `--watch N` measures GPU memory
+   over N idle seconds; growth there is the real leak signal.
 
    `--wait` covers loading (raise it for heavy scenes); `--click` gets past a start button or loading gate.
 2. Read the findings. `error` means broken (no light at all, a mixer that never advances); `warn` means a visible or

@@ -66,3 +66,20 @@ test("reads the screen scene, not environment scenes, and finds a stuck mixer", 
 	assert.equal(report.scene.meshes, 1, "the RoomEnvironment scene must not be mistaken for the app scene");
 	assert.ok(report.findings.some((finding) => finding.code === "mixer-not-updated"));
 });
+
+test("finds the real scene behind post-processing, not the full-screen quad", { skip: !browser && "no Chrome-family browser found" }, async () => {
+	const report = doctor(
+		await page("configurator", (source) =>
+			source
+				.replace(
+					'import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";',
+					'import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";\nimport { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";\nimport { RenderPass } from "three/addons/postprocessing/RenderPass.js";\nimport { OutputPass } from "three/addons/postprocessing/OutputPass.js";',
+				)
+				.replace(
+					"renderer.setAnimationLoop(() => {\n\tcontrols.update();\n\trenderer.render(scene, camera);\n});",
+					"const composer = new EffectComposer(renderer);\ncomposer.addPass(new RenderPass(scene, camera));\ncomposer.addPass(new OutputPass());\nrenderer.setAnimationLoop(() => {\n\tcontrols.update();\n\tcomposer.render();\n});",
+				),
+		),
+	);
+	assert.equal(report.scene.meshes, 5, "the scooter's five meshes, not the composer's single quad");
+});

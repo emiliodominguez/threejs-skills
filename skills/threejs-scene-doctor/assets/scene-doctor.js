@@ -13,21 +13,19 @@
 (function install() {
 	if (typeof window === "undefined" || window.threejsDoctor) return;
 
-	const captured = { renderers: new Set(), scenes: new Set(), mixers: new Set(), revision: null, screenScene: null, screenCamera: null };
+	const captured = { renderers: new Set(), scenes: new Set(), mixers: new Set(), revision: null, rendered: new Map() };
 
 	/**
-	 * Wraps a renderer's render() to remember which scene and camera reach the screen (not a render target).
-	 * Environment generators such as RoomEnvironment are scenes too; this tells them apart from the app's scene.
+	 * Wraps a renderer's render() to remember which scenes are drawn and with which camera. Apps with post-processing
+	 * draw the real scene into a render target and only a full-screen quad (a bare Mesh) to the screen, so every
+	 * Scene rendered to any target counts; bare objects passed to render() do not.
 	 * @param {any} renderer
 	 */
-	function trackScreenRenders(renderer) {
+	function trackRenders(renderer) {
 		const render = renderer.render;
 		if (typeof render !== "function" || render.__doctorWrapped) return;
 		const wrapped = function (scene, camera) {
-			if (!this.getRenderTarget?.()) {
-				captured.screenScene = scene;
-				captured.screenCamera = camera;
-			}
+			if (scene?.isScene) captured.rendered.set(scene, { camera, time: performance.now() });
 			return render.apply(this, arguments);
 		};
 		wrapped.__doctorWrapped = true;
@@ -39,7 +37,7 @@
 		const object = event.detail;
 		if (object?.isWebGLRenderer || object?.isWebGPURenderer || object?.isRenderer) {
 			captured.renderers.add(object);
-			trackScreenRenders(object);
+			trackRenders(object);
 		}
 		else if (object?.isScene) captured.scenes.add(object);
 		else if (object?.constructor?.name === "AnimationMixer" || typeof object?.clipAction === "function") captured.mixers.add(object);
@@ -78,14 +76,43 @@
 	}
 
 	/**
-	 * Picks the scene that is actually rendered: the last one drawn to the screen, else the largest.
+	 * Tells whether a small canvas or image holds only pure black or white RGB (alpha masks such as soft particle
+	 * sprites), which look identical in any color space.
+	 * @param {any} image
+	 * @returns {boolean}
+	 */
+	function onlyBlackOrWhite(image) {
+		const width = image?.width ?? 0;
+		const height = image?.height ?? 0;
+		if (!width || !height || width * height > 512 * 512) return false;
+		try {
+			const canvas = document.createElement("canvas");
+			canvas.width = width;
+			canvas.height = height;
+			const context = canvas.getContext("2d");
+			context.drawImage(image, 0, 0);
+			const data = context.getImageData(0, 0, width, height).data;
+			for (let i = 0; i < data.length; i += 4) {
+				if (data[i + 3] < 8) continue;
+				const tolerance = Math.ceil(255 / data[i + 3]) + 1; // canvases store premultiplied color, so faint pixels round coarsely
+				for (let channel = 0; channel < 3; channel++) if (data[i + channel] > tolerance && data[i + channel] < 255 - tolerance) return false;
+			}
+			return true;
+		} catch {
+			return false; // cross-origin or unreadable images
+		}
+	}
+
+	/**
+	 * Picks the app's main scene: the largest scene rendered in the last few seconds (environment generators,
+	 * thumbnail scenes and post-processing quads are smaller), else the largest scene ever created.
 	 * @returns {any}
 	 */
 	function mainScene() {
-		if (captured.screenScene) return captured.screenScene;
+		const recent = [...captured.rendered].filter(([, entry]) => performance.now() - entry.time < 3000).map(([scene]) => scene);
 		let best = null;
 		let bestCount = -1;
-		for (const scene of captured.scenes) {
+		for (const scene of recent.length ? recent : captured.scenes) {
 			let count = 0;
 			scene.traverse(() => count++);
 			if (count > bestCount) {
@@ -136,6 +163,7 @@
 		const geometries = new Set();
 		const materials = new Set();
 		const textures = new Map();
+		const unculledNames = [];
 		const lights = [];
 		const batches = new Map();
 		let meshes = 0;
@@ -151,14 +179,17 @@
 			meshes++;
 			if (object.visible) visibleMeshes++;
 			if (object.castShadow) shadowCasters++;
-			if (object.frustumCulled === false) noCulling++;
+			if (object.frustumCulled === false) {
+				noCulling++;
+				unculledNames.push(object.name || object.parent?.name || object.type);
+			}
 			if (object.geometry) geometries.add(object.geometry);
 			for (const material of [].concat(object.material ?? [])) {
 				materials.add(material);
 				if (material.transparent) transparent++;
 				for (const key of Object.keys(material)) {
 					const value = material[key];
-					if (value?.isTexture && !textures.has(value)) textures.set(value, key);
+					if (value?.isTexture && !textures.has(value)) textures.set(value, `${key} of ${material.name || material.type} on ${object.name || object.parent?.name || object.type}`);
 				}
 			}
 			if (object.isMesh && !object.isInstancedMesh && !object.isSkinnedMesh && object.geometry && !Array.isArray(object.material)) {
@@ -175,8 +206,8 @@
 			const height = image?.height ?? image?.videoHeight ?? 0;
 			textureBytes += width * height * 4 * (texture.generateMipmaps === false ? 1 : 4 / 3);
 			if (Math.max(width, height) > 2048) largeTextures.push(`${texture.name || slot} ${width}x${height}`);
-			const isColor = slot === "map" || slot === "emissiveMap" || slot === "sheenColorMap" || slot === "specularColorMap";
-			if (isColor && !texture.isCompressedTexture && !texture.isDataTexture && !texture.isRenderTargetTexture && texture.colorSpace !== "srgb") wrongColorSpace.push(`${texture.name || "(unnamed)"} on ${slot}`);
+			const isColor = /^(map|emissiveMap|sheenColorMap|specularColorMap) of /.test(slot);
+			if (isColor && !onlyBlackOrWhite(image) && !texture.isCompressedTexture && !texture.isDataTexture && !texture.isRenderTargetTexture && texture.colorSpace !== "srgb") wrongColorSpace.push(`${texture.name ? `${texture.name}, ` : ""}${slot}`);
 		}
 		const sceneReport = {
 			objects,
@@ -202,8 +233,18 @@
 		if (rendererReport.programs > 40) add("warn", "programs", `${rendererReport.programs} shader programs: every material variant compiles its own. Share materials and avoid toggling defines at runtime.`);
 		const candidates = [...batches.values()].filter((count) => count >= 20);
 		if (candidates.length > 0) add("warn", "instancing", `${candidates.length} geometry+material pair(s) drawn as ${candidates.join(", ")} separate meshes: use InstancedMesh for each.`);
-		if (memory.geometries > geometries.size + 20) add("warn", "geometry-leak", `${memory.geometries} geometries on the GPU but ${geometries.size} in the scene: removed objects were not disposed (geometry.dispose()).`);
-		if (memory.textures > textures.size + 10) add("warn", "texture-leak", `${memory.textures} textures on the GPU but ${textures.size} on scene materials: replaced or removed textures were not disposed (texture.dispose()). Some may be render targets or environment maps.`);
+		// One snapshot cannot prove a leak (render targets, shadow maps, PMREMs and other scenes hold GPU resources),
+		// so compare against every scene the app created and leave the verdict to growth over time (watch / --watch).
+		const allGeometries = new Set();
+		const allTextures = new Set();
+		for (const other of captured.scenes) {
+			other.traverse((object) => {
+				if (object.geometry) allGeometries.add(object.geometry);
+				for (const material of [].concat(object.material ?? [])) for (const value of Object.values(material)) if (value?.isTexture) allTextures.add(value);
+			});
+		}
+		if (memory.geometries > allGeometries.size + 50) add("info", "geometry-surplus", `${memory.geometries} geometries on the GPU but ${allGeometries.size} in all scenes: possibly undisposed geometry. Confirm with growth over time (--watch).`);
+		if (memory.textures > allTextures.size + 50) add("info", "texture-surplus", `${memory.textures} textures on the GPU but ${allTextures.size} on scene materials (render targets and shadow maps also count): confirm with growth over time (--watch).`);
 		const lit = [...materials].filter((material) => material.isMeshStandardMaterial || material.isMeshPhongMaterial || material.isMeshLambertMaterial || material.isMeshToonMaterial);
 		if (lit.length > 0 && lights.length === 0 && !scene?.environment) add("error", "no-light", `${lit.length} lit material(s) but no lights and no scene.environment: everything renders black.`);
 		const metals = lit.filter((material) => material.isMeshStandardMaterial && material.metalness >= 0.9 && !material.metalnessMap && !material.envMap);
@@ -217,8 +258,8 @@
 		if (shadowLights.length > 2) add("info", "shadow-lights", `${shadowLights.length} shadow-casting lights: each renders the scene again (point lights six times).`);
 		for (const light of shadowLights) if (light.shadow?.mapSize?.x > 2048) add("info", "shadow-map-size", `${light.type} shadow map ${light.shadow.mapSize.x}px: 2048 is usually enough; fit the shadow camera instead.`);
 		if (transparent > 30) add("info", "transparency", `${transparent} transparent meshes: sorted every frame and prone to artifacts. Use alphaTest for cutouts.`);
-		if (noCulling > 50) add("info", "frustum-culling", `${noCulling} objects have frustumCulled = false: they render even off screen.`);
-		const camera = options.camera ?? captured.screenCamera;
+		if (noCulling > 50) add("info", "frustum-culling", `${noCulling} objects have frustumCulled = false and render even off screen (${[...new Set(unculledNames)].slice(0, 5).join(", ")}). For InstancedMesh, call computeBoundingSphere() after moving instances instead.`);
+		const camera = options.camera ?? captured.rendered.get(scene)?.camera;
 		if (camera?.isPerspectiveCamera && camera.far / camera.near > 1e5) add("warn", "depth-range", `Camera near ${camera.near} / far ${camera.far}: ratio ${(camera.far / camera.near).toExponential(1)} causes z-fighting. Raise near.`);
 		for (const mixer of captured.mixers) {
 			if ((mixer._nActiveActions ?? 0) > 0 && mixer.time === 0) add("error", "mixer-not-updated", "An AnimationMixer has playing actions but its time is 0: mixer.update(delta) is not called in the loop.");
