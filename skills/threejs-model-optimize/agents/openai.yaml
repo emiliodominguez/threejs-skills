@@ -1,0 +1,7 @@
+interface:
+  display_name: "Optimize 3D Model"
+  short_description: "Shrink glTF models without losing part names"
+  default_prompt: "Use $threejs-model-optimize to shrink this model for the web."
+
+policy:
+  allow_implicit_invocation: true

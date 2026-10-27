@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Material variants</title>
+		<link rel="icon" href="data:," />
+		<style>
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+				overflow: hidden;
+			}
+			select {
+				position: fixed;
+				top: 16px;
+				left: 16px;
+			}
+		</style>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+				}
+			}
+		</script>
+	</head>
+	<body>
+		<select id="variant" aria-label="Variant"></select>
+		<!-- threejs-model-customize, references/vanilla.md section 6: KHR_materials_variants with the parser's associations. -->
+		<script type="module">
+			import * as THREE from "three";
+			import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+			import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+			/** Lists variant names declared in the file. */
+			function variantNames(gltf) {
+				return gltf.parser.json.extensions?.KHR_materials_variants?.variants.map((variant) => variant.name) ?? [];
+			}
+
+			/** Applies a variant by name, or restores the default materials when name is null. */
+			async function selectVariant(gltf, name) {
+				const variantIndex = variantNames(gltf).indexOf(name);
+				const tasks = [];
+				gltf.scene.traverse((object) => {
+					if (!object.isMesh) return;
+					const association = gltf.parser.associations.get(object);
+					if (association?.primitives === undefined) return;
+					const primitive = gltf.parser.json.meshes[association.meshes].primitives[association.primitives];
+					const mappings = primitive.extensions?.KHR_materials_variants?.mappings ?? [];
+					object.userData.defaultMaterial ??= object.material;
+					const mapping = mappings.find((entry) => entry.variants.includes(variantIndex));
+					if (!mapping) {
+						object.material = object.userData.defaultMaterial;
+						return;
+					}
+					tasks.push(gltf.parser.getDependency("material", mapping.material).then((material) => (object.material = material)));
+				});
+				await Promise.all(tasks);
+			}
+
+			const renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			renderer.toneMapping = THREE.NeutralToneMapping;
+			document.body.appendChild(renderer.domElement);
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color("#ececec");
+			scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+			const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.01, 100);
+			camera.position.set(0.15, 0.06, 0.6);
+			camera.lookAt(0.15, 0.06, 0);
+
+			const gltf = await new GLTFLoader().loadAsync("./model.gltf");
+			scene.add(gltf.scene);
+			const shoe = gltf.scene.getObjectByName("Shoe");
+
+			const select = document.getElementById("variant");
+			select.replaceChildren(...variantNames(gltf).map((name) => new Option(name, name)));
+			select.addEventListener("change", () => selectVariant(gltf, select.value));
+
+			const defaultName = shoe.material.name;
+			await selectVariant(gltf, "Red");
+			const redName = shoe.material.name;
+			await selectVariant(gltf, null);
+			const restoredName = shoe.material.name;
+			await selectVariant(gltf, "Midnight");
+			select.value = "Midnight";
+
+			renderer.setAnimationLoop(() => renderer.render(scene, camera));
+			window.__exampleResult = {
+				ok: true,
+				checks: {
+					threeVariants: variantNames(gltf).length === 3,
+					defaultIsClassic: defaultName === "Leather_Classic",
+					redApplied: redName === "Leather_Red",
+					restoredDefault: restoredName === "Leather_Classic",
+					midnightApplied: shoe.material.name === "Leather_Midnight",
+				},
+			};
+		</script>
+	</body>
+</html>

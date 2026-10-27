@@ -1,0 +1,7 @@
+interface:
+  display_name: "Scene Doctor"
+  short_description: "Diagnose a running three.js app"
+  default_prompt: "Use $threejs-scene-doctor to diagnose this running three.js app."
+
+policy:
+  allow_implicit_invocation: true

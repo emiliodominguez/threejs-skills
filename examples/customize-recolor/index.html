@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Recolor one part</title>
+		<link rel="icon" href="data:," />
+		<style>
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+				overflow: hidden;
+			}
+			label {
+				position: fixed;
+				top: 16px;
+				left: 16px;
+				font:
+					14px system-ui,
+					sans-serif;
+			}
+		</style>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+				}
+			}
+		</script>
+	</head>
+	<body>
+		<label>Body color <input id="color" type="color" value="#1f6feb" /></label>
+		<!-- threejs-model-customize, references/vanilla.md sections 1-2: three.js names, own the material before editing. -->
+		<script type="module">
+			import * as THREE from "three";
+			import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+			import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+			const renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			renderer.toneMapping = THREE.NeutralToneMapping;
+			document.body.appendChild(renderer.domElement);
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color("#ececec");
+			scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+			const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
+			camera.position.set(0.6, 1.1, 2.4);
+			camera.lookAt(0, 0.45, 0);
+
+			const gltf = await new GLTFLoader().loadAsync("./model.glb");
+			scene.add(gltf.scene);
+
+			/** Gives a mesh its own copy of its material, once, and returns it. */
+			function ownMaterial(mesh) {
+				if (!mesh.userData.originalMaterial) {
+					mesh.userData.originalMaterial = mesh.material;
+					mesh.material = mesh.material.clone();
+				}
+				return mesh.material;
+			}
+
+			// "Body Paint" in Blender is "Body_Paint" in three.js; the fender shares the same "Paint" material.
+			const body = gltf.scene.getObjectByName("Body_Paint");
+			const fender = gltf.scene.getObjectByName("Fender001");
+			const fenderColorBefore = fender.material.color.getHex();
+
+			const input = document.getElementById("color");
+			function applyColor() {
+				ownMaterial(body).color.set(input.value);
+			}
+			input.addEventListener("input", applyColor);
+			applyColor();
+
+			renderer.setAnimationLoop(() => renderer.render(scene, camera));
+			window.__exampleResult = {
+				ok: true,
+				checks: {
+					partsFound: Boolean(body && fender),
+					bodyRecolored: body.material.color.getHexString() === "1f6feb",
+					fenderUnchanged: fender.material.color.getHex() === fenderColorBefore,
+					materialsSeparated: body.material !== fender.material,
+				},
+			};
+		</script>
+	</body>
+</html>

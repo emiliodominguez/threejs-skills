@@ -1,0 +1,7 @@
+interface:
+  display_name: "WebXR"
+  short_description: "AR placement and VR sessions for three.js"
+  default_prompt: "Use $threejs-webxr to open this scene in AR or VR."
+
+policy:
+  allow_implicit_invocation: true

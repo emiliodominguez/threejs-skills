@@ -1,0 +1,10 @@
+{
+	"name": "threejs-skills",
+	"plugins": [
+		{
+			"name": "threejs-skills",
+			"source": { "source": "local", "path": "./" },
+			"policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" }
+		}
+	]
+}

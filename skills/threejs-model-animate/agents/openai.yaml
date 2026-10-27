@@ -1,0 +1,7 @@
+interface:
+  display_name: "Animate 3D Model"
+  short_description: "Play, blend and retarget model animations"
+  default_prompt: "Use $threejs-model-animate to wire this model's animations."
+
+policy:
+  allow_implicit_invocation: true

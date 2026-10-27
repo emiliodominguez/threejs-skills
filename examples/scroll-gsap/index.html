@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Scroll-driven camera</title>
+		<link rel="icon" href="data:," />
+		<style>
+			body {
+				margin: 0;
+				font:
+					600 40px/1.2 system-ui,
+					sans-serif;
+				color: #1d1d1b;
+				background-color: #e9e7e2;
+			}
+			canvas.webgl {
+				position: fixed;
+				inset: 0;
+				width: 100%;
+				height: 100%;
+				z-index: -1;
+			}
+			section {
+				min-height: 100vh;
+				display: grid;
+				align-items: center;
+				padding: 0 8vw;
+			}
+		</style>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+					"gsap": "https://cdn.jsdelivr.net/npm/gsap@3.15.0/index.js",
+					"gsap/": "https://cdn.jsdelivr.net/npm/gsap@3.15.0/"
+				}
+			}
+		</script>
+	</head>
+	<body>
+		<canvas class="webgl"></canvas>
+		<main id="story">
+			<section><h1>Meet the speaker</h1></section>
+			<section><h2>Machined steel</h2></section>
+			<section><h2>Available now</h2></section>
+		</main>
+		<!-- threejs-scroll, references/vanilla.md sections 1, 2 and 5: one timeline, applied in the frame loop. -->
+		<script type="module">
+			import * as THREE from "three";
+			import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+			import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+			import { gsap } from "gsap";
+			import { ScrollTrigger } from "gsap/ScrollTrigger.js";
+			gsap.registerPlugin(ScrollTrigger);
+			ScrollTrigger.config({ ignoreMobileResize: true });
+
+			const canvas = document.querySelector("canvas.webgl");
+			const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+			renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			renderer.toneMapping = THREE.NeutralToneMapping;
+			const scene = new THREE.Scene();
+			scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+			const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.01, 100);
+			const target = new THREE.Vector3(0, 0, 0);
+			camera.position.set(0, 0.05, 1);
+
+			const gltf = await new GLTFLoader().loadAsync("./model.glb");
+			const model = gltf.scene;
+			scene.add(model);
+
+			const media = gsap.matchMedia();
+			media.add("(prefers-reduced-motion: no-preference)", () => {
+				gsap.timeline({
+					defaults: { ease: "none" },
+					scrollTrigger: { trigger: "#story", start: "top top", end: "bottom bottom", scrub: 0.3 },
+				})
+					.to(camera.position, { x: 0.5, y: 0.25, z: 0.6 }, 0)
+					.to(model.rotation, { y: Math.PI * 0.75 }, 0)
+					.to(camera.position, { x: 0, y: 0.6, z: 1.2 }, 1)
+					.to(target, { y: 0.05 }, 1);
+			});
+
+			renderer.setAnimationLoop(() => {
+				camera.lookAt(target);
+				renderer.render(scene, camera);
+			});
+			window.addEventListener("resize", () => {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+			});
+
+			// Self-check: scroll to the end and confirm the scene followed.
+			const start = camera.position.clone();
+			window.scrollTo(0, document.documentElement.scrollHeight);
+			setTimeout(() => {
+				window.scrollTo(0, 0); // leave the screenshot at the first section
+				setTimeout(() => {
+					window.__exampleResult = {
+						ok: true,
+						checks: { cameraMovedOnScroll: camera.position.distanceTo(start) < 0.05 && window.__movedAtEnd === true },
+					};
+				}, 1500);
+			}, 1500);
+			setTimeout(() => (window.__movedAtEnd = camera.position.distanceTo(start) > 0.5 && model.rotation.y > 2), 1400);
+		</script>
+	</body>
+</html>

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Scroll-driven 3D"
+  short_description: "Scroll-driven camera and model stories"
+  default_prompt: "Use $threejs-scroll to drive this scene from page scroll."
+
+policy:
+  allow_implicit_invocation: true

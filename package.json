@@ -1,0 +1,39 @@
+{
+	"name": "threejs-skills",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Agent skills for three.js and React Three Fiber: inspect, fix, optimize, animate and customize 3D models, plus foundations and model generation.",
+	"license": "MIT",
+	"type": "module",
+	"engines": {
+		"node": ">=24"
+	},
+	"packageManager": "pnpm@12.8.1",
+	"scripts": {
+		"validate": "node scripts/validate.mjs",
+		"test": "node --test test/",
+		"format": "prettier --write .",
+		"format:check": "prettier --check .",
+		"check": "pnpm run format:check && pnpm run validate && pnpm run check:api && pnpm run test",
+		"examples": "node scripts/check-examples.mjs",
+		"examples:all": "node scripts/check-examples.mjs --network",
+		"eval": "node scripts/eval.mjs",
+		"fixtures": "node evals/fixtures.mjs",
+		"check:api": "node scripts/check-api.mjs",
+		"upstream": "node scripts/check-upstream.mjs"
+	},
+	"devDependencies": {
+		"@dimforge/rapier3d-compat": "0.21.0",
+		"@gltf-transform/core": "4.5.1",
+		"@react-three/drei": "10.7.9",
+		"@react-three/fiber": "9.8.2",
+		"@react-three/rapier": "2.2.0",
+		"@react-three/xr": "6.6.32",
+		"@sparkjsdev/spark": "2.4.0",
+		"gsap": "3.15.0",
+		"prettier": "3.9.10",
+		"react": "19.2.0",
+		"react-dom": "19.2.0",
+		"three": "0.186.1"
+	}
+}

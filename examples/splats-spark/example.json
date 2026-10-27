@@ -1,0 +1,6 @@
+{
+	"skill": "threejs-splats",
+	"network": true,
+	"timeout": 60000,
+	"minCoverage": 0.02
+}

@@ -1,0 +1,7 @@
+interface:
+  display_name: "model-viewer Embeds"
+  short_description: "Product embeds and AR with <model-viewer>"
+  default_prompt: "Use $web3d-model-viewer to embed this product model."
+
+policy:
+  allow_implicit_invocation: true

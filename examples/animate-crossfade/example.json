@@ -1,0 +1,9 @@
+{
+	"skill": "threejs-model-animate",
+	"fixtures": {
+		"model.glb": "clip-names"
+	},
+	"minCoverage": 0.02,
+	"minLuminance": 0.15,
+	"maxLuminance": 0.92
+}

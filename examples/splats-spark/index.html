@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Gaussian splat with Spark</title>
+		<link rel="icon" href="data:," />
+		<style>
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+				overflow: hidden;
+				background-color: #101114;
+			}
+		</style>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+					"@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.4.0/spark.module.js"
+				}
+			}
+		</script>
+	</head>
+	<body>
+		<!-- threejs-splats, references/spark.md section 2: SparkRenderer, SplatMesh, orientation, frame after initialized. -->
+		<script type="module">
+			import * as THREE from "three";
+			import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+			import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
+
+			const renderer = new THREE.WebGLRenderer({ antialias: false });
+			renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			document.body.appendChild(renderer.domElement);
+			const scene = new THREE.Scene();
+			const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 1000);
+			const controls = new OrbitControls(camera, renderer.domElement);
+
+			const spark = new SparkRenderer({ renderer });
+			scene.add(spark);
+
+			// Sample capture from Spark's documentation (network).
+			const splat = new SplatMesh({ url: "https://sparkjs.dev/assets/splats/butterfly.spz" });
+			splat.quaternion.set(1, 0, 0, 0); // captures are usually y-down; this flips them upright
+			scene.add(splat);
+
+			await splat.initialized;
+			splat.updateMatrixWorld(true);
+			const box = splat.getBoundingBox(true).applyMatrix4(splat.matrixWorld);
+			const sphere = box.getBoundingSphere(new THREE.Sphere());
+			controls.target.copy(sphere.center);
+			camera.position.copy(sphere.center).add(new THREE.Vector3(0, 0.2, 1).normalize().multiplyScalar(sphere.radius * 2.2));
+			controls.update();
+
+			renderer.setAnimationLoop(() => {
+				controls.update();
+				renderer.render(scene, camera);
+			});
+			setTimeout(() => (window.__exampleResult = { ok: true, checks: { boundsFound: !box.isEmpty() && sphere.radius > 0 } }), 2500);
+		</script>
+	</body>
+</html>

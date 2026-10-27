@@ -1,0 +1,7 @@
+interface:
+  display_name: "Generate 3D Model"
+  short_description: "Generate and rig GLB models through Tripo"
+  default_prompt: "Use $threejs-model-generate to create a GLB model."
+
+policy:
+  allow_implicit_invocation: true

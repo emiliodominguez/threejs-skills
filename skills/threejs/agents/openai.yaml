@@ -1,0 +1,7 @@
+interface:
+  display_name: "three.js Skill Map"
+  short_description: "Route three.js and web 3D tasks"
+  default_prompt: "Use $threejs to pick the right three.js skill for this task."
+
+policy:
+  allow_implicit_invocation: true

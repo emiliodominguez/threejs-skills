@@ -1,0 +1,7 @@
+{
+	"skill": "threejs-model-fix",
+	"fixtures": { "model.glb": "metal-black" },
+	"minCoverage": 0.05,
+	"minLuminance": 0.2,
+	"maxLuminance": 0.92
+}

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Gaussian Splats"
+  short_description: "Show Gaussian splat captures with Spark"
+  default_prompt: "Use $threejs-splats to show this capture in three.js."
+
+policy:
+  allow_implicit_invocation: true

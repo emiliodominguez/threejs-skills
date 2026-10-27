@@ -1,0 +1,9 @@
+node_modules/
+coverage/
+*.log
+.DS_Store
+.pnpm-store/
+.plans/
+evals/fixtures/
+evals/results/
+examples/*/check.png

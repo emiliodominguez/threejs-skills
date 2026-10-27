@@ -1,0 +1,18 @@
+{
+	"name": "threejs-skills",
+	"version": "0.1.0",
+	"description": "three.js and React Three Fiber skills: inspect, fix, optimize, animate and customize 3D models, plus foundations and model generation.",
+	"author": { "name": "Emilio Dominguez" },
+	"license": "MIT",
+	"homepage": "https://github.com/emiliodominguez/threejs-skills",
+	"repository": "https://github.com/emiliodominguez/threejs-skills",
+	"skills": "./skills/",
+	"interface": {
+		"displayName": "three.js Skills",
+		"shortDescription": "3D model workflows for three.js and R3F",
+		"longDescription": "Inspect, render, fix, optimize, animate and customize glTF models in three.js and React Three Fiber, plus current-API foundations, an upgrade linter and model generation.",
+		"developerName": "Emilio Dominguez",
+		"category": "Developer Tools",
+		"capabilities": ["Inspect 3D models", "Render and diff models", "Optimize glTF", "Lint outdated three.js code"]
+	}
+}

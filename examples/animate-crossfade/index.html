@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Crossfade animation clips</title>
+		<link rel="icon" href="data:," />
+		<style>
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+				overflow: hidden;
+			}
+		</style>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+				}
+			}
+		</script>
+	</head>
+	<body>
+		<!-- threejs-model-animate, references/vanilla.md sections 1-3: actions by real name, fadeTo, one-shot back to idle. -->
+		<script type="module">
+			import * as THREE from "three";
+			import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+			import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+			const renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			renderer.toneMapping = THREE.NeutralToneMapping;
+			document.body.appendChild(renderer.domElement);
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color("#e4e4e4");
+			scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+			const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
+			camera.position.set(0, 0.8, 3);
+			camera.lookAt(0, 0.6, 0);
+
+			const gltf = await new GLTFLoader().loadAsync("./model.glb");
+			scene.add(gltf.scene);
+
+			// Clips from FBX conversions are named "Armature|Idle"; key actions by the part after the last "|".
+			const mixer = new THREE.AnimationMixer(gltf.scene);
+			const actions = Object.fromEntries(gltf.animations.map((clip) => [clip.name.split("|").pop(), mixer.clipAction(clip)]));
+
+			let current = actions.Idle;
+			current.play();
+
+			/** Fades from the current action to the named one. */
+			function fadeTo(name, duration = 0.3) {
+				const next = actions[name];
+				if (!next || next === current) return;
+				next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(duration).play();
+				current.fadeOut(duration);
+				current = next;
+			}
+
+			const wave = actions.Wave;
+			wave.setLoop(THREE.LoopOnce, 1);
+			wave.clampWhenFinished = true;
+			let returnedToIdle = false;
+			mixer.addEventListener("finished", (event) => {
+				if (event.action === wave) {
+					fadeTo("Idle", 0.2);
+					returnedToIdle = true;
+				}
+			});
+			window.addEventListener("pointerdown", () => fadeTo("Wave", 0.2));
+
+			const timer = new THREE.Timer();
+			timer.connect(document);
+			renderer.setAnimationLoop((timestamp) => {
+				timer.update(timestamp);
+				mixer.update(timer.getDelta());
+				renderer.render(scene, camera);
+			});
+
+			// Self-check: wave once, confirm it returns to idle and the mixer advanced.
+			fadeTo("Wave", 0.2);
+			setTimeout(() => {
+				window.__exampleResult = {
+					ok: true,
+					checks: {
+						clipsFound: Boolean(actions.Idle && actions.Wave),
+						mixerAdvanced: mixer.time > 0.5,
+						returnedToIdle,
+						idleActive: current === actions.Idle,
+					},
+				};
+			}, 2000);
+		</script>
+	</body>
+</html>

@@ -1,0 +1,4 @@
+node_modules/
+pnpm-lock.yaml
+# Skills are authored prose and vendored forks; do not let Prettier reflow them.
+skills/

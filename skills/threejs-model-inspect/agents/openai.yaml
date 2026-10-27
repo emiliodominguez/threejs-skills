@@ -1,0 +1,7 @@
+interface:
+  display_name: "Inspect 3D Model"
+  short_description: "Report and render what a glTF model contains"
+  default_prompt: "Use $threejs-model-inspect to report and render this model."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,91 @@
+{
+	"scaffold": {
+		"three": "0.186.1",
+		"note": "Each task copies its fixture next to index.html and main.js. MODEL in main.js is replaced by the fixture file name."
+	},
+	"tasks": [
+		{
+			"id": "fix-black",
+			"skill": "threejs-model-fix",
+			"fixture": "metal-black",
+			"prompt": "The speaker model in this three.js page renders completely black. Fix it so it looks like brushed steel. Do not edit the .glb file.",
+			"checks": [
+				{ "type": "unchanged", "file": "MODEL" },
+				{
+					"type": "render",
+					"minCoverage": 0.003,
+					"minLuminance": 0.18,
+					"maxLuminance": 0.92,
+					"label": "model visible, lit and not blown out"
+				},
+				{ "type": "no-console-errors" }
+			]
+		},
+		{
+			"id": "fix-invisible",
+			"skill": "threejs-model-fix",
+			"fixture": "centimeters",
+			"prompt": "I can't see the wardrobe model at all, the page is just empty. Fix it.",
+			"checks": [
+				{ "type": "render", "minCoverage": 0.03, "maxCoverage": 0.9, "label": "model framed in view" },
+				{ "type": "no-console-errors" }
+			]
+		},
+		{
+			"id": "animate-clips",
+			"skill": "threejs-model-animate",
+			"fixture": "clip-names",
+			"prompt": "Make the robot play its idle animation on loop, and play the wave animation once whenever the user clicks, then go back to idle.",
+			"checks": [
+				{ "type": "file-matches", "file": "main.js", "pattern": "Armature\\|Idle|Idle", "label": "uses the real idle clip" },
+				{ "type": "file-matches", "file": "main.js", "pattern": "LoopOnce", "label": "wave plays once" },
+				{ "type": "file-matches", "file": "main.js", "pattern": "\\.update\\(", "label": "mixer advanced each frame" },
+				{ "type": "file-not-matches", "file": "main.js", "pattern": "new\\s+(THREE\\.)?Clock\\(", "label": "no deprecated Clock" },
+				{ "type": "no-console-errors" }
+			]
+		},
+		{
+			"id": "customize-paint",
+			"skill": "threejs-model-customize",
+			"fixture": "configurator",
+			"prompt": "Add a color input to the page that changes the scooter's body color. Only the body should change; the fender must keep its original color.",
+			"checks": [
+				{ "type": "file-matches", "file": "main.js", "pattern": "\\.clone\\(\\)", "label": "material cloned before editing" },
+				{
+					"type": "file-not-matches",
+					"file": "main.js",
+					"pattern": "getObjectByName\\(\\s*[\"']Body Paint[\"']",
+					"label": "uses the three.js name, not the DCC name"
+				},
+				{ "type": "no-console-errors" }
+			]
+		},
+		{
+			"id": "upgrade-code",
+			"skill": "threejs-upgrade",
+			"fixture": "metal-black",
+			"scaffold": "legacy",
+			"prompt": "This three.js code was written for an old version. Update it so it works correctly with the three.js version it now loads (0.186).",
+			"checks": [
+				{ "type": "lint-clean", "level": "deprecated", "label": "no removed or deprecated APIs" },
+				{ "type": "render", "minCoverage": 0.01, "label": "still renders" },
+				{ "type": "no-console-errors" }
+			]
+		},
+		{
+			"id": "missing-texture",
+			"skill": "threejs-model-fix",
+			"fixture": "missing-texture",
+			"prompt": "The poster model shows up white instead of showing its picture. What's wrong?",
+			"checks": [
+				{ "type": "answer-matches", "pattern": "poster\\.jpg", "label": "names the missing file" },
+				{
+					"type": "answer-matches",
+					"pattern": "missing|not found|404|does not exist|doesn't exist",
+					"flags": "i",
+					"label": "says it is missing"
+				}
+			]
+		}
+	]
+}

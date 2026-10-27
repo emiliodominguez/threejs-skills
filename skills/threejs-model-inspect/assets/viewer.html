@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Model Viewer</title>
+		<link rel="icon" href="data:," />
+		<!--
+			Known-good reference viewer for glTF/GLB files (three r186). Every decoder is wired, lighting comes from an
+			environment map, the camera frames the model's bounds, and clips can be played. If a model looks right here
+			and wrong in the app, the bug is in the app's setup, not the file.
+
+			Interactive:  viewer.html?model=path/to/model.glb   (or drop a .glb, or a .gltf with its files)
+			Capture mode (driven by scripts/render.mjs, usable by hand):
+			  &capture=sheet                   six views of one model in one image
+			  &capture=compare&compare=b.glb   four views of model, of b.glb framed identically, and a diff row
+			  &size=384  tile size in px    &clip=Run&time=0.5  pose a clip    &env=0  no environment map
+			Results land in window.__result once rendering finishes.
+		-->
+		<style>
+			:root {
+				--bg: #f2f2f0;
+				--fg: #1d1d1b;
+				--muted: #6b6b66;
+				--error: #b3261e;
+				--chip: rgba(0, 0, 0, 0.06);
+			}
+			@media (prefers-color-scheme: dark) {
+				:root {
+					--bg: #1b1c1e;
+					--fg: #ececea;
+					--muted: #9a9a95;
+					--error: #ff8a80;
+					--chip: rgba(255, 255, 255, 0.08);
+				}
+			}
+			* {
+				box-sizing: border-box;
+			}
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+				background-color: var(--bg);
+				color: var(--fg);
+				font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+			}
+			canvas {
+				display: block;
+			}
+			body.interactive canvas {
+				width: 100%;
+				height: 100%;
+			}
+			body.capture {
+				height: auto;
+				background-color: #000;
+			}
+			body.capture #panel,
+			body.capture #drop {
+				display: none;
+			}
+			#panel {
+				position: fixed;
+				top: 12px;
+				left: 12px;
+				max-width: min(440px, calc(100vw - 24px));
+				max-height: calc(100vh - 24px);
+				overflow: auto;
+				padding: 10px 12px;
+				border-radius: 8px;
+				background-color: color-mix(in srgb, var(--bg) 88%, transparent);
+				backdrop-filter: blur(8px);
+			}
+			#panel h1 {
+				margin: 0 0 6px;
+				font-size: 13px;
+			}
+			#stats div {
+				color: var(--muted);
+			}
+			#stats strong {
+				color: var(--fg);
+				font-weight: 600;
+			}
+			#errors {
+				color: var(--error);
+				white-space: pre-wrap;
+			}
+			.controls {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 6px;
+				margin-top: 8px;
+			}
+			button {
+				font: inherit;
+				color: var(--fg);
+				background-color: var(--chip);
+				border: 0;
+				border-radius: 6px;
+				padding: 4px 8px;
+				cursor: pointer;
+			}
+			button[aria-pressed="true"] {
+				background-color: var(--fg);
+				color: var(--bg);
+			}
+			#drop {
+				position: fixed;
+				inset: 0;
+				display: none;
+				place-items: center;
+				font-size: 16px;
+				background-color: color-mix(in srgb, var(--bg) 80%, transparent);
+			}
+			body.dragging #drop {
+				display: grid;
+			}
+		</style>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+				}
+			}
+		</script>
+	</head>
+	<body>
+		<div id="panel">
+			<h1 id="title">Drop a .glb here or pass ?model=</h1>
+			<div id="stats"></div>
+			<div id="errors"></div>
+			<div class="controls" id="toggles"></div>
+			<div class="controls" id="clips"></div>
+		</div>
+		<div id="drop">Drop model files</div>
+		<script type="module">
+			import * as THREE from "three";
+			import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+			import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+			import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+			import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
+			import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+			import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+			const params = new URLSearchParams(location.search);
+			const captureMode = params.get("capture");
+			const pageErrors = [];
+			window.__errors = pageErrors;
+			document.body.classList.add(captureMode ? "capture" : "interactive");
+
+			const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: Boolean(captureMode) });
+			renderer.toneMapping = THREE.NeutralToneMapping;
+			const scene = new THREE.Scene();
+			const pmrem = new THREE.PMREMGenerator(renderer);
+			const environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+			scene.environment = params.get("env") === "0" ? null : environment;
+			const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+
+			const loader = new GLTFLoader()
+				.setDRACOLoader(new DRACOLoader())
+				.setMeshoptDecoder(MeshoptDecoder)
+				.setKTX2Loader(new KTX2Loader().detectSupport(renderer));
+
+			/**
+			 * Records an error for the panel, the console and capture results.
+			 * @param {unknown} error
+			 */
+			function showError(error) {
+				const message = error instanceof Error ? error.message : String(error);
+				pageErrors.push(message);
+				console.error(error);
+				const errorsEl = document.getElementById("errors");
+				if (errorsEl) errorsEl.textContent += `${message}\n`;
+			}
+			window.addEventListener("error", (event) => showError(event.error ?? event.message));
+			window.addEventListener("unhandledrejection", (event) => showError(event.reason));
+
+			/**
+			 * Returns the distance at which a sphere of the given radius fills the camera's view.
+			 * @param {number} radius
+			 * @returns {number}
+			 */
+			function fitDistance(radius) {
+				return Math.max(radius, 1e-6) / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2));
+			}
+
+			/**
+			 * Places the camera on a direction from the box center, at a distance that fits the box.
+			 * @param {THREE.Box3} box
+			 * @param {THREE.Vector3} direction
+			 * @param {THREE.Vector3} [up]
+			 */
+			function placeCamera(box, direction, up = new THREE.Vector3(0, 1, 0)) {
+				const sphere = box.getBoundingSphere(new THREE.Sphere());
+				const distance = fitDistance(sphere.radius);
+				camera.up.copy(up);
+				camera.position.copy(sphere.center).add(direction.clone().normalize().multiplyScalar(distance));
+				camera.near = distance / 100;
+				camera.far = distance * 100;
+				camera.lookAt(sphere.center);
+				camera.updateProjectionMatrix();
+			}
+
+			/**
+			 * Sets wireframe on every material of an object.
+			 * @param {THREE.Object3D} object
+			 * @param {boolean} enabled
+			 */
+			function setWireframe(object, enabled) {
+				object.traverse((child) => {
+					if (child.isMesh) for (const material of [].concat(child.material)) material.wireframe = enabled;
+				});
+			}
+
+			/**
+			 * Poses a model on a clip at a time, when requested.
+			 * @param {import("three/addons/loaders/GLTFLoader.js").GLTF} gltf
+			 * @returns {THREE.AnimationMixer | null}
+			 */
+			function pose(gltf) {
+				const name = params.get("clip");
+				if (!name) return null;
+				const clip = gltf.animations.find((entry) => entry.name === name);
+				if (!clip) throw new Error(`Clip "${name}" not found. Clips: ${gltf.animations.map((entry) => entry.name).join(", ") || "none"}`);
+				const mixer = new THREE.AnimationMixer(gltf.scene);
+				mixer.clipAction(clip).play();
+				mixer.setTime(Number(params.get("time") ?? 0));
+				return mixer;
+			}
+
+			// ---------------------------------------------------------------- capture mode
+
+			const VIEWS = {
+				front: { direction: new THREE.Vector3(0, 0, 1) },
+				right: { direction: new THREE.Vector3(1, 0, 0) },
+				back: { direction: new THREE.Vector3(0, 0, -1) },
+				top: { direction: new THREE.Vector3(0, 1, 0), up: new THREE.Vector3(0, 0, -1) },
+				"three-quarter": { direction: new THREE.Vector3(0.6, 0.4, 1) },
+				wireframe: { direction: new THREE.Vector3(0.6, 0.4, 1), wireframe: true },
+			};
+			const BACKGROUND = [170, 170, 170];
+
+			/**
+			 * Tells whether the pixel at offset i differs from the clear color.
+			 * @param {Uint8ClampedArray} data
+			 * @param {number} i
+			 * @returns {boolean}
+			 */
+			function isForeground(data, i) {
+				return Math.abs(data[i] - BACKGROUND[0]) + Math.abs(data[i + 1] - BACKGROUND[1]) + Math.abs(data[i + 2] - BACKGROUND[2]) > 12;
+			}
+
+			/**
+			 * Renders the requested views of an object into tiles on a 2D context.
+			 * @param {THREE.Object3D} object
+			 * @param {THREE.Box3} box
+			 * @param {string[]} names
+			 * @param {CanvasRenderingContext2D} context
+			 * @param {number} row
+			 * @param {number} size
+			 * @param {string} label
+			 */
+			function renderRow(object, box, names, context, row, size, label) {
+				scene.add(object);
+				names.forEach((name, column) => {
+					const view = VIEWS[name];
+					setWireframe(object, Boolean(view.wireframe));
+					placeCamera(box, view.direction, view.up);
+					renderer.render(scene, camera);
+					context.drawImage(renderer.domElement, column * size, row * size, size, size);
+					context.fillStyle = "rgba(0, 0, 0, 0.55)";
+					context.fillRect(column * size, row * size, size, 22);
+					context.fillStyle = "#fff";
+					context.font = "13px ui-monospace, Menlo, monospace";
+					context.fillText(`${label}${name}`, column * size + 8, row * size + 15);
+				});
+				setWireframe(object, false);
+				scene.remove(object);
+			}
+
+			/**
+			 * Compares two rows of tiles and paints a diff row: grey where equal, red where different.
+			 * @param {CanvasRenderingContext2D} context
+			 * @param {number} columns
+			 * @param {number} size
+			 * @returns {{ percent: number, perView: number[] }}
+			 */
+			function diffRows(context, columns, size) {
+				const perView = [];
+				let changed = 0;
+				let covered = 0;
+				for (let column = 0; column < columns; column++) {
+					const a = context.getImageData(column * size, 22, size, size - 22);
+					const b = context.getImageData(column * size, size + 22, size, size - 22);
+					const out = context.createImageData(size, size - 22);
+					let viewChanged = 0;
+					let viewCovered = 0;
+					for (let i = 0; i < a.data.length; i += 4) {
+						const delta = Math.max(Math.abs(a.data[i] - b.data[i]), Math.abs(a.data[i + 1] - b.data[i + 1]), Math.abs(a.data[i + 2] - b.data[i + 2]));
+						const foreground = isForeground(a.data, i) || isForeground(b.data, i);
+						if (foreground) viewCovered++;
+						const differs = foreground && delta > 24;
+						if (differs) viewChanged++;
+						const grey = (b.data[i] + b.data[i + 1] + b.data[i + 2]) / 3;
+						out.data[i] = differs ? 255 : grey * 0.6;
+						out.data[i + 1] = differs ? 40 : grey * 0.6;
+						out.data[i + 2] = differs ? 40 : grey * 0.6;
+						out.data[i + 3] = 255;
+					}
+					context.putImageData(out, column * size, 2 * size + 22);
+					context.fillStyle = "rgba(0, 0, 0, 0.55)";
+					context.fillRect(column * size, 2 * size, size, 22);
+					context.fillStyle = "#fff";
+					const percent = viewCovered ? (viewChanged / viewCovered) * 100 : 0;
+					context.fillText(`diff ${percent.toFixed(2)}%`, column * size + 8, 2 * size + 15);
+					perView.push(Number(percent.toFixed(3)));
+					changed += viewChanged;
+					covered += viewCovered;
+				}
+				return { percent: covered ? Number(((changed / covered) * 100).toFixed(3)) : 0, perView };
+			}
+
+			/**
+			 * Collects facts about a loaded model for the capture result.
+			 * @param {import("three/addons/loaders/GLTFLoader.js").GLTF} gltf
+			 * @param {THREE.Box3} box
+			 * @returns {object}
+			 */
+			function describe(gltf, box) {
+				scene.add(gltf.scene);
+				placeCamera(box, VIEWS["three-quarter"].direction);
+				renderer.render(scene, camera);
+				scene.remove(gltf.scene);
+				return {
+					triangles: renderer.info.render.triangles,
+					drawCalls: renderer.info.render.calls,
+					size: box.getSize(new THREE.Vector3()).toArray().map((value) => Number(value.toFixed(4))),
+					center: box.getCenter(new THREE.Vector3()).toArray().map((value) => Number(value.toFixed(4))),
+					clips: gltf.animations.map((clip) => clip.name),
+				};
+			}
+
+			/**
+			 * Runs capture mode and publishes window.__result.
+			 */
+			async function capture() {
+				const size = Number(params.get("size") ?? 384);
+				renderer.setPixelRatio(1);
+				renderer.setSize(size, size);
+				renderer.setClearColor(new THREE.Color().setRGB(...BACKGROUND.map((value) => value / 255), THREE.SRGBColorSpace));
+				const canvas = document.createElement("canvas");
+				const context = canvas.getContext("2d", { willReadFrequently: true });
+				document.body.append(canvas);
+
+				const first = await loader.loadAsync(params.get("model"));
+				pose(first);
+				const box = new THREE.Box3().setFromObject(first.scene);
+				if (box.isEmpty()) throw new Error("Model has no visible geometry (empty bounds).");
+				const result = { ok: true, mode: captureMode, model: describe(first, box) };
+
+				if (captureMode === "compare") {
+					const names = ["front", "right", "top", "three-quarter"];
+					canvas.width = names.length * size;
+					canvas.height = 3 * size;
+					const second = await loader.loadAsync(params.get("compare"));
+					pose(second);
+					result.compare = describe(second, new THREE.Box3().setFromObject(second.scene));
+					renderRow(first.scene, box, names, context, 0, size, "A ");
+					renderRow(second.scene, box, names, context, 1, size, "B ");
+					result.diff = diffRows(context, names.length, size);
+				} else {
+					const names = ["front", "right", "back", "top", "three-quarter", "wireframe"];
+					canvas.width = 3 * size;
+					canvas.height = 2 * size;
+					// renderRow draws a single row; render each view to its own tile and lay them out 3x2.
+					names.forEach((name, index) => {
+						const tile = document.createElement("canvas");
+						tile.width = tile.height = size;
+						renderRow(first.scene, box, [name], tile.getContext("2d"), 0, size, "");
+						context.drawImage(tile, (index % 3) * size, Math.floor(index / 3) * size);
+					});
+				}
+				result.width = canvas.width;
+				result.height = canvas.height;
+				result.errors = pageErrors;
+				window.__result = result;
+			}
+
+			// ---------------------------------------------------------------- interactive mode
+
+			/**
+			 * Runs the interactive viewer.
+			 */
+			function interactive() {
+				const statsEl = document.getElementById("stats");
+				const titleEl = document.getElementById("title");
+				renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+				renderer.setSize(window.innerWidth, window.innerHeight);
+				document.body.prepend(renderer.domElement);
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				camera.position.set(2, 1.5, 3);
+				const controls = new OrbitControls(camera, renderer.domElement);
+				controls.enableDamping = true;
+
+				const grid = new THREE.GridHelper(10, 10, 0x888888, 0x888888);
+				grid.material.opacity = 0.25;
+				grid.material.transparent = true;
+				scene.add(grid);
+
+				const timer = new THREE.Timer();
+				timer.connect(document);
+				let current = null;
+				let mixer = null;
+				const state = { environment: params.get("env") !== "0", wireframe: false, doubleSide: false, grid: true };
+
+				/**
+				 * Moves the camera so the whole object is in view and sizes the grid to it.
+				 * @param {THREE.Object3D} object
+				 * @returns {{ size: THREE.Vector3, center: THREE.Vector3 }}
+				 */
+				function frame(object) {
+					const box = new THREE.Box3().setFromObject(object);
+					placeCamera(box, VIEWS["three-quarter"].direction);
+					const size = box.getSize(new THREE.Vector3());
+					const center = box.getCenter(new THREE.Vector3());
+					controls.target.copy(center);
+					controls.update();
+					grid.scale.setScalar(Math.max(size.x, size.z) / 5 || 1);
+					grid.position.set(center.x, box.min.y, center.z);
+					return { size, center };
+				}
+
+				/**
+				 * Applies the toggle state to the scene and every material in the model.
+				 */
+				function applyToggles() {
+					scene.environment = state.environment ? environment : null;
+					grid.visible = state.grid;
+					current?.traverse((child) => {
+						if (!child.isMesh) return;
+						for (const material of [].concat(child.material)) {
+							material.wireframe = state.wireframe;
+							material.side = state.doubleSide ? THREE.DoubleSide : (material.userData.originalSide ??= material.side);
+							material.needsUpdate = true;
+						}
+					});
+				}
+
+				/**
+				 * Builds a toggle button bound to a state key.
+				 * @param {string} label
+				 * @param {keyof typeof state} key
+				 */
+				function addToggle(label, key) {
+					const button = document.createElement("button");
+					button.textContent = label;
+					button.setAttribute("aria-pressed", String(state[key]));
+					button.addEventListener("click", () => {
+						state[key] = !state[key];
+						button.setAttribute("aria-pressed", String(state[key]));
+						applyToggles();
+					});
+					document.getElementById("toggles").append(button);
+				}
+				addToggle("environment", "environment");
+				addToggle("wireframe", "wireframe");
+				addToggle("double-sided", "doubleSide");
+				addToggle("grid", "grid");
+
+				/**
+				 * Replaces the current model with a loaded glTF and reports on it.
+				 * @param {import("three/addons/loaders/GLTFLoader.js").GLTF} gltf
+				 * @param {string} label
+				 */
+				function show(gltf, label) {
+					if (current) scene.remove(current);
+					mixer?.stopAllAction();
+					current = gltf.scene;
+					scene.add(current);
+					applyToggles();
+					const { size, center } = frame(current);
+					const names = [];
+					current.traverse((child) => child.name && names.push(child.name));
+					renderer.render(scene, camera);
+					const info = renderer.info.render;
+					titleEl.textContent = label;
+					statsEl.innerHTML = [
+						`<div>size <strong>${size.toArray().map((v) => +v.toFixed(3)).join(" x ")}</strong></div>`,
+						`<div>center <strong>${center.toArray().map((v) => +v.toFixed(3)).join(", ")}</strong></div>`,
+						`<div>triangles <strong>${info.triangles}</strong>, draw calls <strong>${info.calls}</strong></div>`,
+						`<div>clips <strong>${gltf.animations.length}</strong>, named objects <strong>${names.length}</strong> (logged to console)</div>`,
+					].join("");
+					console.log("Objects by name:", names);
+					window.viewer = { THREE, scene, camera, renderer, gltf, model: current };
+
+					const clipsEl = document.getElementById("clips");
+					clipsEl.replaceChildren();
+					mixer = gltf.animations.length ? new THREE.AnimationMixer(current) : null;
+					for (const clip of gltf.animations) {
+						const button = document.createElement("button");
+						button.textContent = `${clip.name} (${clip.duration.toFixed(2)}s)`;
+						button.addEventListener("click", () => {
+							mixer.stopAllAction();
+							mixer.clipAction(clip).reset().play();
+							for (const other of clipsEl.children) other.setAttribute("aria-pressed", String(other === button));
+						});
+						clipsEl.append(button);
+					}
+				}
+
+				/**
+				 * Loads a model from a URL, resolving sibling files from dropped blobs.
+				 * @param {string} url
+				 * @param {string} label
+				 * @param {Map<string, string>} [blobs]
+				 */
+				async function load(url, label, blobs) {
+					document.getElementById("errors").textContent = "";
+					titleEl.textContent = `Loading ${label}...`;
+					loader.manager.setURLModifier((requested) => blobs?.get(decodeURIComponent(requested.split("/").pop())) ?? requested);
+					try {
+						show(await loader.loadAsync(url), label);
+					} catch (error) {
+						titleEl.textContent = `Failed: ${label}`;
+						showError(error);
+					}
+				}
+
+				if (params.get("model")) load(params.get("model"), params.get("model"));
+
+				window.addEventListener("dragover", (event) => {
+					event.preventDefault();
+					document.body.classList.add("dragging");
+				});
+				window.addEventListener("dragleave", () => document.body.classList.remove("dragging"));
+				window.addEventListener("drop", (event) => {
+					event.preventDefault();
+					document.body.classList.remove("dragging");
+					const files = [...event.dataTransfer.files];
+					const blobs = new Map(files.map((file) => [file.name, URL.createObjectURL(file)]));
+					const main = files.find((file) => /\.(glb|gltf)$/i.test(file.name));
+					if (main) load(blobs.get(main.name), main.name, blobs);
+					else showError("Drop a .glb, or a .gltf with its .bin and textures.");
+				});
+				window.addEventListener("resize", () => {
+					camera.aspect = window.innerWidth / window.innerHeight;
+					camera.updateProjectionMatrix();
+					renderer.setSize(window.innerWidth, window.innerHeight);
+				});
+				renderer.setAnimationLoop((timestamp) => {
+					timer.update(timestamp);
+					mixer?.update(timer.getDelta());
+					controls.update();
+					renderer.render(scene, camera);
+				});
+			}
+
+			if (captureMode) {
+				capture().catch((error) => {
+					showError(error);
+					window.__result = { ok: false, error: error instanceof Error ? error.message : String(error), errors: pageErrors };
+				});
+			} else {
+				interactive();
+			}
+		</script>
+	</body>
+</html>

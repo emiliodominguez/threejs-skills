@@ -1,0 +1,52 @@
+{
+	"profiles": {
+		"models": [
+			"threejs",
+			"threejs-model-inspect",
+			"threejs-model-fix",
+			"threejs-model-optimize",
+			"threejs-model-animate",
+			"threejs-model-customize",
+			"threejs-scene-doctor",
+			"threejs-upgrade"
+		],
+		"foundations": [
+			"threejs",
+			"threejs-fundamentals",
+			"threejs-geometry",
+			"threejs-materials",
+			"threejs-lighting",
+			"threejs-textures",
+			"threejs-loaders",
+			"threejs-animation",
+			"threejs-interaction",
+			"threejs-shaders",
+			"threejs-postprocessing",
+			"threejs-performance",
+			"threejs-react-three-fiber",
+			"threejs-asset-pipeline",
+			"threejs-upgrade"
+		],
+		"experiences": [
+			"threejs",
+			"threejs-scroll",
+			"threejs-physics",
+			"threejs-webxr",
+			"threejs-splats",
+			"web3d-model-viewer",
+			"threejs-model-inspect"
+		],
+		"create": [
+			"threejs",
+			"threejs-model-generate",
+			"threejs-assets",
+			"threejs-model-inspect",
+			"threejs-model-fix",
+			"threejs-model-optimize",
+			"threejs-model-animate"
+		]
+	},
+	"external": {
+		"img2threejs": "img2threejs/img2threejs"
+	}
+}

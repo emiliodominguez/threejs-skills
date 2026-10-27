@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>model-viewer embed</title>
+		<link rel="icon" href="data:," />
+		<style>
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+				background-color: #f4f3ef;
+			}
+			model-viewer {
+				width: 100%;
+				height: 100%;
+			}
+		</style>
+		<script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@4.4.0/dist/model-viewer.min.js"></script>
+	</head>
+	<body>
+		<!-- web3d-model-viewer, SKILL.md and references/recipes.md sections 2-3: embed, hotspot, variants, material color. -->
+		<model-viewer
+			id="viewer"
+			src="./model.gltf"
+			alt="Leather shoe in three colors"
+			camera-controls
+			touch-action="pan-y"
+			shadow-intensity="1"
+			tone-mapping="commerce"
+			ar
+			ar-modes="webxr scene-viewer quick-look"
+		>
+			<button slot="hotspot-toe" data-position="0.28 0.06 0" data-normal="0 0 1">Toe cap</button>
+		</model-viewer>
+		<script type="module">
+			const viewer = document.getElementById("viewer");
+			viewer.addEventListener("load", async () => {
+				const variants = viewer.availableVariants;
+				viewer.variantName = "Red";
+				await viewer.updateComplete;
+				await new Promise((done) => setTimeout(done, 500));
+				// model.materials lists every material in the file, variants included; isActive marks the ones in use.
+				const material = viewer.model.materials.find((entry) => entry.isActive);
+				window.__exampleResult = {
+					ok: true,
+					checks: {
+						variantsListed: JSON.stringify(variants) === JSON.stringify(["Classic", "Red", "Midnight"]),
+						redVariantActive: material?.name === "Leather_Red",
+						materialApiWorks: typeof material.pbrMetallicRoughness.setBaseColorFactor === "function",
+					},
+				};
+			});
+			viewer.addEventListener("error", (event) => (window.__exampleResult = { ok: false, error: JSON.stringify(event.detail) }));
+		</script>
+	</body>
+</html>

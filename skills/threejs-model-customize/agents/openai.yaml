@@ -1,0 +1,7 @@
+interface:
+  display_name: "Customize 3D Model"
+  short_description: "Recolor, swap and attach parts of a model"
+  default_prompt: "Use $threejs-model-customize to make this model's parts configurable."
+
+policy:
+  allow_implicit_invocation: true

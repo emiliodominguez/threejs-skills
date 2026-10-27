@@ -1,0 +1,7 @@
+interface:
+  display_name: "Physics with Rapier"
+  short_description: "Colliders, bodies and characters with Rapier"
+  default_prompt: "Use $threejs-physics to add physics to this scene."
+
+policy:
+  allow_implicit_invocation: true

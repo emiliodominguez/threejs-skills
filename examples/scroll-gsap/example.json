@@ -1,0 +1,7 @@
+{
+	"skill": "threejs-scroll",
+	"fixtures": { "model.glb": "metal-black" },
+	"minCoverage": 0.03,
+	"minLuminance": 0.15,
+	"maxLuminance": 0.92
+}

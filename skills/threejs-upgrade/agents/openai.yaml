@@ -1,0 +1,7 @@
+interface:
+  display_name: "Upgrade three.js Code"
+  short_description: "Find and fix outdated three.js and R3F code"
+  default_prompt: "Use $threejs-upgrade to update this project to the current three.js."
+
+policy:
+  allow_implicit_invocation: true

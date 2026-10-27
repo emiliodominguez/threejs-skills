@@ -1,0 +1,7 @@
+{
+	"skill": "threejs-physics",
+	"fixtures": { "model.glb": "configurator" },
+	"minCoverage": 0.05,
+	"minLuminance": 0.15,
+	"maxLuminance": 0.92
+}

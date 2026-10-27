@@ -1,0 +1,13 @@
+{
+	"name": "threejs-skills",
+	"displayName": "three.js Skills",
+	"description": "three.js and React Three Fiber skills: inspect, fix, optimize, animate and customize 3D models, plus foundations and model generation.",
+	"version": "0.1.0",
+	"author": {
+		"name": "Emilio Dominguez"
+	},
+	"homepage": "https://github.com/emiliodominguez/threejs-skills",
+	"repository": "https://github.com/emiliodominguez/threejs-skills",
+	"license": "MIT",
+	"keywords": ["agent-skills", "skills", "threejs", "three.js", "react-three-fiber", "gltf", "3d-models", "webgl", "webgpu"]
+}

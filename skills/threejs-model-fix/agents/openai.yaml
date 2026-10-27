@@ -1,0 +1,7 @@
+interface:
+  display_name: "Fix 3D Model"
+  short_description: "Fix models that render wrong in three.js"
+  default_prompt: "Use $threejs-model-fix to find why this model renders wrong."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,15 @@
+{
+	"name": "threejs-skills",
+	"description": "three.js and React Three Fiber skills for working with 3D models.",
+	"owner": {
+		"name": "Emilio Dominguez"
+	},
+	"plugins": [
+		{
+			"name": "threejs-skills",
+			"description": "Inspect, fix, optimize, animate and customize 3D models in three.js and React Three Fiber, plus foundations and model generation.",
+			"source": "./",
+			"category": "development"
+		}
+	]
+}

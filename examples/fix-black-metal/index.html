@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Fix a black metal model</title>
+		<link rel="icon" href="data:," />
+		<style>
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+				overflow: hidden;
+				background-color: #d8d8d8;
+			}
+		</style>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+				}
+			}
+		</script>
+	</head>
+	<body>
+		<!-- threejs-model-fix, references/symptoms.md sections 1-4: environment, normalize, frame. -->
+		<script type="module">
+			import * as THREE from "three";
+			import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+			import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+			import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+			/** Centers the model on the origin, rests it on y = 0 and optionally scales its largest side to `targetSize`. */
+			function normalizeModel(model, targetSize) {
+				const box = new THREE.Box3().setFromObject(model);
+				const size = box.getSize(new THREE.Vector3());
+				if (targetSize) {
+					model.scale.multiplyScalar(targetSize / Math.max(size.x, size.y, size.z));
+					box.setFromObject(model);
+				}
+				const center = box.getCenter(new THREE.Vector3());
+				model.position.x -= center.x;
+				model.position.z -= center.z;
+				model.position.y -= box.min.y;
+			}
+
+			/** Points the camera at the object from a distance that fits its bounding sphere, with sane near/far. */
+			function frameObject(object, camera, controls) {
+				const sphere = new THREE.Box3().setFromObject(object).getBoundingSphere(new THREE.Sphere());
+				const distance = sphere.radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2));
+				camera.position.copy(sphere.center).add(new THREE.Vector3(0.6, 0.4, 1).normalize().multiplyScalar(distance));
+				camera.near = distance / 100;
+				camera.far = distance * 100;
+				camera.updateProjectionMatrix();
+				controls?.target.copy(sphere.center);
+				controls?.update();
+			}
+
+			const renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			renderer.toneMapping = THREE.NeutralToneMapping;
+			document.body.appendChild(renderer.domElement);
+
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color("#d8d8d8");
+			const pmrem = new THREE.PMREMGenerator(renderer);
+			scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+			const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+			const controls = new OrbitControls(camera, renderer.domElement);
+
+			const gltf = await new GLTFLoader().loadAsync("./model.glb");
+			normalizeModel(gltf.scene, 1);
+			scene.add(gltf.scene);
+			frameObject(gltf.scene, camera, controls);
+
+			renderer.setAnimationLoop(() => {
+				controls.update();
+				renderer.render(scene, camera);
+			});
+			window.__exampleResult = { ok: true, checks: { environmentSet: Boolean(scene.environment) } };
+		</script>
+	</body>
+</html>

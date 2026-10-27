@@ -1,0 +1,5 @@
+{
+	"skill": "web3d-model-viewer",
+	"fixtures": { "model.gltf": "variants" },
+	"minCoverage": 0.01
+}
